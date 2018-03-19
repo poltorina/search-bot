@@ -39,7 +39,7 @@ const readAndVariableFile = async () => {
   });
 };
 
-const checkKey = async url => {
+const checkKey = async (url, index) => {
   let {href, body} = await requestPromise({
     method: 'GET',
     json: true,
@@ -48,15 +48,21 @@ const checkKey = async url => {
   const document = parser.parse(body);
 
   keys.forEach(el => {
-    if(document.structuredText.includes(el)) console.log(href, el);
-  })
-
+    if (document.structuredText.includes(el)) result.set(href, el);
+  });
+  if (index === domains.size - 1) {
+    console.log(result);
+    console.log(+new Date() - t1);
+  }
 };
 
 try {
   readAndVariableFile()
     .then(() => {
-      domains.forEach(el => checkKey(el));
+      console.log(+new Date() - t1);
+
+      // for (let el of domains) checkKey(el)
+      [...domains].forEach((el, i) => checkKey(el, i));
     })
     .catch(err => console.log('catch', err))
 }
