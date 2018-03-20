@@ -2,6 +2,7 @@ const {promisify} = require('util');
 const request = require('request');
 const parser = require("fast-html-parser");
 const colors = require('colors');
+const iconv = require('iconv-lite');
 let {readFile, writeFile} = require('fs');
 
 writeFile = promisify(writeFile);
@@ -40,6 +41,9 @@ const readAndVariableFile = async () => {
 };
 const writeKeywords = async (domain, data) => {
   try {
+    data = iconv.decode(iconv.encode(data, "win1251"));
+
+    console.log(data);
     await writeFile(`./sites/${encodeURIComponent(domain)}.txt`, [...data].join(' '));
   }
   catch (err) {
@@ -53,9 +57,10 @@ const checkKey = async url => {
   try {
     let {href, body} = await requestPromise({
       method: 'GET',
-      headers : {
-        'Accept':'text/html,application/xhtml+xml,application/xml;q=0.9,image/webp,image/apng,*/*;q=0.8',
-        'User-Agent':'Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Ubuntu Chromium/64.0.3282.167 Chrome/64.0.3282.167 Safari/537.36'
+      headers: {
+        'Accept-Language': 'en-US,en;q=0.9,ru;q=0.8,uk;q=0.7',
+        'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,image/webp,image/apng,*/*;q=0.8; charset=utf-8',
+        'User-Agent': 'Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Ubuntu Chromium/64.0.3282.167 Chrome/64.0.3282.167 Safari/537.36'
       },
       uri: 'http://' + url
     });
@@ -73,14 +78,19 @@ const checkKey = async url => {
         .join(',')
         .toLowerCase()
         .split(',')
-        .filter(el => !!el.trim() && el.match(/[a-zA-Zа-яА-я]/)));
+        .filter(el => {
+          // el = iconv.decode(iconv.encode(el, "win1251"));
+          // console.log('el', el);
+          return !!el.trim()/* && el.match(/[a-zA-Zа-яА-я]/)*/
+        }));
     console.log(`${href}`.green);
     console.log(`${[...keySet]}`.cyan);
-    if(!!keySet.size) await writeKeywords(href, keySet);
+    if (!!keySet.size) {
+      await writeKeywords(url, keySet);
 
-    const fileContent = await _readFile(`./sites/${encodeURIComponent(href)}`);
-    console.log(`${fileContent}`.blue);
-
+      const fileContent = await _readFile(`./sites/${encodeURIComponent(href)}`);
+      console.log(`${fileContent}`.blue);
+    }
     console.log(keywords);
 
   }

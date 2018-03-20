@@ -11,6 +11,7 @@
   "dependencies": {
     "colors": "^1.2.1",
     "fast-html-parser": "^1.0.1",
+    "iconv-lite": "^0.4.19",
     "request": "^2.85.0"
   }
 }
