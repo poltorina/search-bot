@@ -1,26 +1,28 @@
-const {promisify} = require('util');
-const request = require('request');
-const parser = require("fast-html-parser");
 const colors = require('colors');
+const request = require('request');
+const {promisify} = require('util');
 const iconv = require('iconv-lite');
-let {readFile, writeFile} = require('fs');
+const parser = require("fast-html-parser");
+let {readFile, writeFile, existsSync, mkdirSync} = require('fs');
 
 writeFile = promisify(writeFile);
+readFile = promisify(readFile);
 
-const _readFile = name => promisify(readFile)(name + '.txt', {encoding: 'utf8'});
-const fileToArray = name => promisify(readFile)(name + '.txt', {encoding: 'utf8'}).then(res => res.replace(/\|/g, '').split('\n').map(el => el.trim()));
-const requestPromise = options => {
+const _readFile = name => readFile(name + '.txt', {encoding: 'utf8'});
+const fileToArray = name => readFile(name + '.txt', {encoding: 'utf8'}).then(res => res.replace(/\|/g, '').split('\n').map(el => el.trim()));
+const requestPromise = (options, encoding) => {
   return new Promise((resolve, reject) => {
     request(options, (err, res, body) => {
       if (!err && res.statusCode === 200) {
+        if(encoding) body = iconv.decode(body, 'win1251');
         resolve({href: res.request.href, body: body});
       }
-      else reject('error: ', err, options);
+      else reject(`error: ${err}, ${res && res.statusCode ? `statusCode: ${res.statusCode}` : ''}`);
     })
   })
 };
-let domainsAll = [], ignore = [], keys = [], checkCounter = 0,
-  domains = new Set();
+let domainsAll = [], ignore = [], checkCounter = 0,
+  domains = new Set(), siteNow = '';
 
 let t1 = +new Date();
 const readAndVariableFile = async () => {
@@ -36,34 +38,30 @@ const readAndVariableFile = async () => {
         elSplit.shift();
       }
     }
-    if (i === domainsAll.length - 1) console.log(`${[...domains]}`.yellow, `${+new Date() - t1}`.blue);
+    if (i === domainsAll.length - 1) console.log(`size: ${domains.size}, time: ${+new Date() - t1}`.bgGreen);
   });
 };
-const writeKeywords = async (domain, data) => {
-  try {
-    data = iconv.decode(iconv.encode(data, "win1251"));
+const writeKeywords = async (domain, href, data) => {
+  const dir = './sites';
 
-    console.log(data);
-    await writeFile(`./sites/${encodeURIComponent(domain)}.txt`, [...data].join(' '));
-  }
-  catch (err) {
-    console.log(err.red)
-  }
+  if (!existsSync(dir)) mkdirSync(dir);
+  await writeFile(`${dir}/${(domain)}.txt`, `${href} ${[...data].join(' ')}`);
 };
 
-const checkKey = async url => {
-  console.log(`checkKey, ${url}`.bgYellow);
+const checkKey = async (url, encoding) => {
+  console.log(`checkKey: ${url}`.bgBlue);
   checkCounter++;
+  let encodingNext;
   try {
     let {href, body} = await requestPromise({
       method: 'GET',
-      headers: {
-        'Accept-Language': 'en-US,en;q=0.9,ru;q=0.8,uk;q=0.7',
-        'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,image/webp,image/apng,*/*;q=0.8; charset=utf-8',
-        'User-Agent': 'Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Ubuntu Chromium/64.0.3282.167 Chrome/64.0.3282.167 Safari/537.36'
+      encoding: (encoding ? null : 'utf8'),
+      headers : {
+        'Accept':'text/html,application/xhtml+xml,application/xml;q=0.9,image/webp,image/apng,*/*;q=0.8',
+        'User-Agent':'Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Ubuntu Chromium/64.0.3282.167 Chrome/64.0.3282.167 Safari/537.36'
       },
       uri: 'http://' + url
-    });
+    }, !!encoding);
     const document = parser.parse(body);
     let keywords = [];
     ['meta', 'h1', 'h2', 'h3', 'title'].forEach(e => {
@@ -71,43 +69,44 @@ const checkKey = async url => {
         return (e === 'meta' && el.rawAttrs.includes('keywords') && el.rawAttrs.split(/.*content=\\?('|")/)[1]) || el.structuredText ?
           (e === 'meta' ? el.rawAttrs.split(/.*content=\\?('|")/)[1].split(/\\?('|")/)[0] : el.structuredText) : ''
       }).join(' '));
-    });
-    let keySet = new Set(
-      keywords
-        .map(el => el.split(/[,.; \n\t\s]/).filter(el => !!el.trim()))
-        .join(',')
-        .toLowerCase()
-        .split(',')
-        .filter(el => {
-          // el = iconv.decode(iconv.encode(el, "win1251"));
-          // console.log('el', el);
-          return !!el.trim()/* && el.match(/[a-zA-Zа-яА-я]/)*/
-        }));
+    }, 0);
+    const keywordsArray = keywords
+      .map(el => el.split(/[,.; \n\t\s]/).filter(el => !!el.trim()))
+      .join(',')
+      .toLowerCase()
+      .split(',')
+      .filter(el => !!el.trim()
+      );
+    let keySet = new Set(keywordsArray.filter(el => el.match(/[a-zA-Zа-яА-я]/)));
+    console.log(`keywords: ${keywordsArray.length}, keySet: ${keySet.size}`.bgCyan);
     console.log(`${href}`.green);
     console.log(`${[...keySet]}`.cyan);
-    if (!!keySet.size) {
-      await writeKeywords(url, keySet);
 
-      const fileContent = await _readFile(`./sites/${encodeURIComponent(href)}`);
-      console.log(`${fileContent}`.blue);
+    if(keySet.size * 10 > keywordsArray.length || siteNow === url) {
+      if (!!keySet.size) {
+        await writeKeywords(url, href, keySet);
+        // const fileContent = await _readFile(`./sites/${(url)}`);
+        // console.log(`${fileContent}`.blue);
+      }
+      console.log(keywords);
+    } else {
+      siteNow = url;
+      checkCounter--;
+      encodingNext = true
     }
-    console.log(keywords);
-
   }
   catch (err) {
-    console.log(`11111 ${url}`.blue, `${err}`.red)
+    console.log(`${url} ${err}`.bgRed)
   }
-  console.log(checkCounter, domains.size);
-  if (checkCounter < domains.size) checkKey([...domains][checkCounter])
+  console.log(`count: ${checkCounter}, domains size: ${domains.size}`.yellow);
+  if (checkCounter < domains.size) checkKey([...domains][checkCounter], encodingNext)
 };
 
 try {
   readAndVariableFile()
-    .then(() => {
-      checkKey([...domains][0]);
-    })
-    .catch(err => console.log('catch', err))
+    .then(() => checkKey([...domains][0]))
+    .catch(err => console.log(`try -> catch ${err}`.bgRed))
 }
 catch (error) {
-  console.log(error);
+  console.log(`1 ${error}`.bgRed);
 }
